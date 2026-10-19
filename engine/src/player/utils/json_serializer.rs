@@ -84,7 +84,7 @@ pub fn set_defaults(config: &PlayoutConfig, playlist: &mut JsonPlaylist) {
         item.filter = None;
 
         let source_path = Path::new(&item.source);
-        if source_path.is_relative() {
+        if !is_remote(&item.source) && source_path.is_relative() {
             let new_path = config.storage.path.join(source_path);
             item.source = new_path.to_string_lossy().to_string();
         }
