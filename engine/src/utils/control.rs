@@ -18,6 +18,9 @@ use crate::{
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ControlParams {
     pub control: PlayerCtl,
+    /// Target clip for `jump`: position in the current day's list (0-based).
+    #[serde(default)]
+    pub index: Option<usize>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone, Eq, PartialEq)]
@@ -60,6 +63,7 @@ impl fmt::Display for ProcessCtl {
 pub enum PlayerCtl {
     Back,
     Next,
+    Jump,
     #[default]
     Reset,
 }
@@ -71,6 +75,7 @@ impl FromStr for PlayerCtl {
         match input.to_lowercase().as_str() {
             "back" => Ok(Self::Back),
             "next" => Ok(Self::Next),
+            "jump" => Ok(Self::Jump),
             "reset" => Ok(Self::Reset),
             _ => Err(format!("Command '{input}' not found!")),
         }
@@ -82,6 +87,7 @@ impl fmt::Display for PlayerCtl {
         match *self {
             Self::Back => write!(f, "back"),
             Self::Next => write!(f, "next"),
+            Self::Jump => write!(f, "jump"),
             Self::Reset => write!(f, "reset"),
         }
     }
@@ -157,6 +163,7 @@ pub async fn control_state(
     conn: &Pool<Sqlite>,
     manager: &ChannelManager,
     command: &PlayerCtl,
+    jump_index: Option<usize>,
 ) -> Result<Map<String, Value>, ServiceError> {
     let config = manager.config.read().await.clone();
     let id = config.general.channel_id;
@@ -201,6 +208,33 @@ pub async fn control_state(
                 data_map.insert("shifted_seconds".to_string(), json!(shift));
                 data_map.insert("media".to_string(), get_media_map(media));
             }
+        }
+
+        PlayerCtl::Jump => {
+            // Same mechanism as next/back (time shift to the target clip's start,
+            // then the running decoder is stopped), but to any clip of the list:
+            // the player loop takes `current_index` as the next clip to start.
+            let Some(target) = jump_index.filter(|target| *target < current_list.len()) else {
+                return Err(ServiceError::BadRequest(format!(
+                    "jump needs an index between 0 and {}",
+                    current_list.len().saturating_sub(1)
+                )));
+            };
+            let mut media = current_list[target].clone();
+            (shift, _) = get_delta(&config, &media.begin.unwrap_or(0.0));
+
+            info!(target: Target::file_mail(), channel = id; "Jump to clip {target}");
+
+            manager.current_index.store(target, Ordering::SeqCst);
+
+            if let Err(e) = media.add_probe(false).await {
+                error!(target: Target::file_mail(), channel = id; "{e:?}");
+            };
+
+            data_map.insert("operation".to_string(), json!("jump"));
+            data_map.insert("index".to_string(), json!(target));
+            data_map.insert("shifted_seconds".to_string(), json!(shift));
+            data_map.insert("media".to_string(), get_media_map(media));
         }
 
         PlayerCtl::Reset => {

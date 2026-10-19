@@ -64,6 +64,7 @@ pub async fn send_text_message(
 ///
 /// - next
 /// - back
+/// - jump (with `"index"`: 0-based position in the current list)
 /// - reset
 ///
 /// ```BASH
@@ -97,7 +98,7 @@ pub async fn control_playout(
 
     manager.is_processing.store(true, Ordering::SeqCst);
 
-    let resp = match control_state(&state.pool, &manager, &control.control).await {
+    let resp = match control_state(&state.pool, &manager, &control.control, control.index).await {
         Ok(res) => Ok(Json(res)),
         Err(e) => Err(e),
     };
