@@ -45,7 +45,7 @@ fn run_npm(args: &[&str]) {
 }
 
 fn main() {
-    #[cfg(not(debug_assertions))]
+    #[cfg(all(not(debug_assertions), feature = "embed_frontend"))]
     {
         if !Path::new(RUN_P_BIN).exists() {
             info!("run-p not found, installing frontend dependencies with npm ci");
