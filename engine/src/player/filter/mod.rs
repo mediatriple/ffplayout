@@ -381,6 +381,14 @@ fn pad(config: &PlayoutConfig, chain: &mut Filters, aspect: f64) {
                 &pad_video,
                 &[&numerator.to_string(), &denominator.to_string()],
             ),
+            None if aspect > config.processing.aspect => {
+                // Source is wider than the target aspect: padding width from
+                // height (the branch below) computes a target narrower than
+                // the source itself, which ffmpeg rejects ("Padded dimensions
+                // cannot be smaller than input dimensions"). Pad height from
+                // width instead.
+                format!("pad='iw:iw*{denominator}/{numerator}:(ow-iw)/2:(oh-ih)/2'")
+            }
             None => format!("pad='ih*{numerator}/{denominator}:ih:(ow-iw)/2:(oh-ih)/2'"),
         };
 
